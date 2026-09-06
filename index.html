@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#1f4e79">
+<title>英语打卡 · 单词 & 简历短语</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <!-- 顶部导航 -->
+  <header class="header">
+    <div class="header-inner">
+      <h1 class="logo">📚 英语打卡</h1>
+      <nav class="tabs">
+        <button class="tab active" data-plan="words">每日单词</button>
+        <button class="tab" data-plan="phrases">简历短语</button>
+        <button class="tab" data-plan="stats">学习统计</button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- 主内容区 -->
+  <main class="main">
+    <!-- 单词计划视图 -->
+    <section id="view-words" class="view active">
+      <div class="day-selector">
+        <button class="day-nav" id="prev-day">◀</button>
+        <div class="day-info">
+          <span class="day-label" id="current-day-label">Day 1</span>
+          <span class="day-stage" id="current-day-stage"></span>
+        </div>
+        <button class="day-nav" id="next-day">▶</button>
+      </div>
+
+      <div class="progress-bar-wrap">
+        <div class="progress-bar">
+          <div class="progress-fill" id="day-progress"></div>
+        </div>
+        <span class="progress-text" id="day-progress-text">0/30</span>
+      </div>
+
+      <div class="speech-settings">
+        <label>
+          🔊 口音：
+          <select id="speech-lang-words">
+            <option value="en-US">美式英语</option>
+            <option value="en-GB">英式英语</option>
+          </select>
+        </label>
+        <label>
+          语速：
+          <input type="range" id="speech-rate-words" min="0.5" max="1.5" step="0.1" value="0.9">
+          <span id="speech-rate-value-words">0.9x</span>
+        </label>
+        <button class="btn-speak-small" id="test-speech-words" style="font-size:14px;">🔊 试听</button>
+      </div>
+
+      <div class="word-list" id="word-list"></div>
+
+      <div class="day-actions">
+        <button class="btn btn-primary" id="mark-all-done">✓ 标记今日全部完成</button>
+        <button class="btn" id="reset-day">↺ 重置今日打卡</button>
+      </div>
+    </section>
+
+    <!-- 短语计划视图 -->
+    <section id="view-phrases" class="view">
+      <div class="day-selector">
+        <button class="day-nav" id="prev-phrase-day">◀</button>
+        <div class="day-info">
+          <span class="day-label" id="current-phrase-day-label">Day 1</span>
+          <span class="day-stage" id="current-phrase-day-stage"></span>
+        </div>
+        <button class="day-nav" id="next-phrase-day">▶</button>
+      </div>
+
+      <div class="progress-bar-wrap">
+        <div class="progress-bar">
+          <div class="progress-fill" id="phrase-progress"></div>
+        </div>
+        <span class="progress-text" id="phrase-progress-text">0/20</span>
+      </div>
+
+      <div class="speech-settings">
+        <label>
+          🔊 口音：
+          <select id="speech-lang-phrases">
+            <option value="en-US">美式英语</option>
+            <option value="en-GB">英式英语</option>
+          </select>
+        </label>
+        <label>
+          语速：
+          <input type="range" id="speech-rate-phrases" min="0.5" max="1.5" step="0.1" value="0.9">
+          <span id="speech-rate-value-phrases">0.9x</span>
+        </label>
+        <button class="btn-speak-small" id="test-speech-phrases" style="font-size:14px;">🔊 试听</button>
+      </div>
+
+      <div class="phrase-list" id="phrase-list"></div>
+
+      <div class="day-actions">
+        <button class="btn btn-primary" id="mark-phrase-done">✓ 标记今日全部完成</button>
+        <button class="btn" id="reset-phrase-day">↺ 重置今日打卡</button>
+      </div>
+    </section>
+
+    <!-- 统计视图 -->
+    <section id="view-stats" class="view">
+      <div class="stats-cards">
+        <div class="stat-card">
+          <div class="stat-number" id="stat-total-days">30</div>
+          <div class="stat-label">总天数</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="stat-completed-days">0</div>
+          <div class="stat-label">已完成天数</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="stat-total-words">0</div>
+          <div class="stat-label">已学单词</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="stat-streak">0</div>
+          <div class="stat-label">连续打卡</div>
+        </div>
+      </div>
+
+      <div class="stats-section">
+        <h3>📅 单词计划打卡日历</h3>
+        <div class="calendar" id="words-calendar"></div>
+      </div>
+
+      <div class="stats-section">
+        <h3>📝 简历短语计划打卡日历</h3>
+        <div class="calendar" id="phrases-calendar"></div>
+      </div>
+
+      <div class="stats-section">
+        <h3>🎙️ 录音记录</h3>
+        <div class="recordings-list" id="recordings-list">
+          <p class="empty-text">暂无录音记录</p>
+        </div>
+      </div>
+
+      <div class="stats-section">
+        <h3>⚙️ 数据管理</h3>
+        <div class="data-actions">
+          <button class="btn" id="export-data">📤 导出学习数据</button>
+          <button class="btn" id="import-data">📥 导入学习数据</button>
+          <button class="btn btn-danger" id="clear-all-data">🗑️ 清除所有数据</button>
+        </div>
+        <input type="file" id="import-file" accept=".json" style="display:none">
+      </div>
+    </section>
+  </main>
+
+  <!-- 录音弹窗 -->
+  <div class="modal-overlay" id="record-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>🎙️ 录音打卡</h3>
+        <button class="modal-close" id="close-record-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="record-target" id="record-target-text"></div>
+        <div class="record-status" id="record-status">点击下方按钮开始录音</div>
+        <div class="record-timer" id="record-timer">00:00</div>
+        <div class="record-controls">
+          <button class="btn btn-record" id="start-record">● 开始录音</button>
+          <button class="btn btn-stop" id="stop-record" disabled>■ 停止录音</button>
+        </div>
+        <div class="record-playback" id="record-playback" style="display:none">
+          <h4>录音回放：</h4>
+          <audio id="record-audio" controls></audio>
+          <div class="record-save">
+            <input type="text" id="record-name" placeholder="给这段录音起个名字（可选）">
+            <button class="btn btn-primary" id="save-record">💾 保存录音</button>
+            <button class="btn" id="re-record">🔄 重新录制</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 单词详情弹窗 -->
+  <div class="modal-overlay" id="detail-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="detail-title">单词详情</h3>
+        <button class="modal-close" id="close-detail-modal">✕</button>
+      </div>
+      <div class="modal-body" id="detail-body"></div>
+    </div>
+  </div>
+
+  <!-- Toast 提示 -->
+  <div class="toast" id="toast"></div>
+</div>
+
+<script src="data/words.js"></script>
+<script src="data/phrases.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
