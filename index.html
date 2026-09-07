@@ -18,6 +18,7 @@
       <nav class="tabs">
         <button class="tab active" data-plan="words">每日单词</button>
         <button class="tab" data-plan="phrases">简历短语</button>
+        <button class="tab" data-plan="ai-add">✨ AI加词</button>
         <button class="tab" data-plan="stats">学习统计</button>
       </nav>
     </div>
@@ -58,6 +59,12 @@
         </label>
         <button class="btn-speak-small" id="test-speech-words" style="font-size:14px;">🔊 试听</button>
       </div>
+
+      <div class="search-bar">
+        <input type="text" id="search-words" placeholder="🔍 搜索单词（支持英文/中文）...">
+        <button class="btn-search-clear" id="clear-search-words" style="display:none">✕</button>
+      </div>
+      <div class="search-results" id="search-words-results" style="display:none"></div>
 
       <div class="word-list" id="word-list"></div>
 
@@ -101,11 +108,103 @@
         <button class="btn-speak-small" id="test-speech-phrases" style="font-size:14px;">🔊 试听</button>
       </div>
 
+      <div class="search-bar">
+        <input type="text" id="search-phrases" placeholder="🔍 搜索短语（支持英文/中文）...">
+        <button class="btn-search-clear" id="clear-search-phrases" style="display:none">✕</button>
+      </div>
+      <div class="search-results" id="search-phrases-results" style="display:none"></div>
+
       <div class="phrase-list" id="phrase-list"></div>
 
       <div class="day-actions">
         <button class="btn btn-primary" id="mark-phrase-done">✓ 标记今日全部完成</button>
         <button class="btn" id="reset-phrase-day">↺ 重置今日打卡</button>
+      </div>
+    </section>
+
+    <!-- AI加词视图 -->
+    <section id="view-ai-add" class="view">
+      <!-- API Key设置 -->
+      <div class="ai-settings-card" id="api-key-section">
+        <h3>🔑 首次设置：Groq API Key</h3>
+        <p class="ai-hint">使用免费开源AI（Llama 3）生成词汇，需要一个免费API Key。</p>
+        <ol class="ai-steps">
+          <li>打开 <a href="https://console.groq.com/keys" target="_blank">console.groq.com/keys</a> 免费注册登录</li>
+          <li>点击 "Create API Key"，复制生成的Key（以 gsk_ 开头）</li>
+          <li>粘贴到下方输入框，点击保存</li>
+        </ol>
+        <div class="api-key-input-row">
+          <input type="password" id="api-key-input" placeholder="粘贴你的Groq API Key（gsk_...）">
+          <button class="btn btn-primary" id="save-api-key">💾 保存</button>
+        </div>
+        <p class="ai-hint small">Key只存在你的浏览器本地，不会上传到任何服务器。Groq免费额度足够日常使用。</p>
+      </div>
+
+      <!-- AI加词主界面 -->
+      <div id="ai-main-section" style="display:none">
+        <div class="ai-generate-card">
+          <h3>✨ AI生成相关词汇</h3>
+          <p class="ai-hint">输入一个关键词（如 inference），AI会自动生成相关的单词和短语</p>
+          <div class="ai-input-row">
+            <input type="text" id="ai-keyword-input" placeholder="输入关键词，如：inference / 推理 / 机器学习">
+            <button class="btn btn-primary" id="ai-generate-btn">🚀 生成</button>
+          </div>
+          <div class="ai-model-select">
+            <label>AI模型：</label>
+            <select id="ai-model-select">
+              <option value="llama-3.1-70b-versatile">Llama 3.1 70B（推荐，效果好）</option>
+              <option value="llama-3.1-8b-instant">Llama 3.1 8B（更快）</option>
+              <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
+            </select>
+            <button class="btn btn-small" id="change-api-key">🔑 更换Key</button>
+          </div>
+          <div class="ai-loading" id="ai-loading" style="display:none">
+            <div class="spinner"></div>
+            <span>AI正在生成中，请稍候...</span>
+          </div>
+        </div>
+
+        <!-- 生成结果 -->
+        <div class="ai-results-card" id="ai-results-card" style="display:none">
+          <div class="ai-results-header">
+            <h3>📋 生成结果</h3>
+            <div class="ai-results-actions">
+              <button class="btn btn-small" id="select-all-words">全选单词</button>
+              <button class="btn btn-small" id="select-all-phrases">全选短语</button>
+              <button class="btn btn-primary btn-small" id="add-selected-btn">➕ 添加选中到词库</button>
+            </div>
+          </div>
+
+          <div class="ai-results-section">
+            <h4>📖 相关单词</h4>
+            <div class="ai-word-list" id="ai-word-list"></div>
+          </div>
+
+          <div class="ai-results-section">
+            <h4>💬 相关短语</h4>
+            <div class="ai-phrase-list" id="ai-phrase-list"></div>
+          </div>
+        </div>
+
+        <!-- 自定义词库 -->
+        <div class="custom-library-card">
+          <div class="custom-library-header">
+            <h3>📚 我的自定义词库</h3>
+            <div class="custom-library-actions">
+              <span class="custom-count" id="custom-words-count">0词</span>
+              <span class="custom-count" id="custom-phrases-count">0短语</span>
+              <button class="btn btn-danger btn-small" id="clear-custom-library">清空</button>
+            </div>
+          </div>
+
+          <div class="custom-tabs">
+            <button class="custom-tab active" data-custom-tab="words">单词</button>
+            <button class="custom-tab" data-custom-tab="phrases">短语</button>
+          </div>
+
+          <div class="custom-word-list" id="custom-word-list"></div>
+          <div class="custom-phrase-list" id="custom-phrase-list" style="display:none"></div>
+        </div>
       </div>
     </section>
 

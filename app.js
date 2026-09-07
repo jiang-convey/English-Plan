@@ -9,7 +9,11 @@
     RECORDINGS: 'english_recordings',
     CURRENT_WORD_DAY: 'english_current_word_day',
     CURRENT_PHRASE_DAY: 'english_current_phrase_day',
-    LAST_ACTIVE_DATE: 'english_last_active_date'
+    LAST_ACTIVE_DATE: 'english_last_active_date',
+    GROQ_API_KEY: 'english_groq_api_key',
+    CUSTOM_WORDS: 'english_custom_words',
+    CUSTOM_PHRASES: 'english_custom_phrases',
+    AI_MODEL: 'english_ai_model'
   };
 
   // ===== 全局状态 =====
@@ -25,7 +29,14 @@
     recordingBlob: null,
     recordingTimer: null,
     recordingSeconds: 0,
-    currentRecordTarget: null
+    currentRecordTarget: null,
+    // AI加词相关
+    customWords: [],
+    customPhrases: [],
+    aiGeneratedWords: [],
+    aiGeneratedPhrases: [],
+    currentCustomTab: 'words',
+    isAiGenerating: false
   };
 
   // ===== 工具函数 =====
@@ -80,14 +91,20 @@
     state.recordings = loadJSON(STORAGE_KEYS.RECORDINGS, []);
     state.currentWordDay = loadJSON(STORAGE_KEYS.CURRENT_WORD_DAY, 1);
     state.currentPhraseDay = loadJSON(STORAGE_KEYS.CURRENT_PHRASE_DAY, 1);
+    state.customWords = loadJSON(STORAGE_KEYS.CUSTOM_WORDS, []);
+    state.customPhrases = loadJSON(STORAGE_KEYS.CUSTOM_PHRASES, []);
 
     // 绑定事件
     bindEvents();
-    
+
+    // 初始化AI加词界面
+    initAiView();
+
     // 渲染初始视图
     renderWordDay();
     renderPhraseDay();
     renderStats();
+    renderCustomLibrary();
   }
 
   // ===== 事件绑定 =====
@@ -174,6 +191,58 @@
     $('test-speech-phrases').addEventListener('click', (e) => {
       speakText('I built an A-share factor research platform and reproduced 21 broker research factors.', e.target);
     });
+
+    // ===== AI加词功能 =====
+    $('save-api-key').addEventListener('click', saveApiKey);
+    $('change-api-key').addEventListener('click', () => {
+      $('api-key-section').style.display = 'block';
+      $('ai-main-section').style.display = 'none';
+      $('api-key-input').value = '';
+    });
+    $('ai-generate-btn').addEventListener('click', generateAiWords);
+    $('ai-keyword-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') generateAiWords();
+    });
+    $('ai-model-select').addEventListener('change', (e) => {
+      saveJSON(STORAGE_KEYS.AI_MODEL, e.target.value);
+    });
+    $('select-all-words').addEventListener('click', () => toggleSelectAll('ai-word-list', true));
+    $('select-all-phrases').addEventListener('click', () => toggleSelectAll('ai-phrase-list', true));
+    $('add-selected-btn').addEventListener('click', addSelectedToLibrary);
+
+    // 自定义词库Tab切换
+    document.querySelectorAll('.custom-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        state.currentCustomTab = tab.dataset.customTab;
+        document.querySelectorAll('.custom-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        $('custom-word-list').style.display = state.currentCustomTab === 'words' ? 'block' : 'none';
+        $('custom-phrase-list').style.display = state.currentCustomTab === 'phrases' ? 'block' : 'none';
+      });
+    });
+
+    $('clear-custom-library').addEventListener('click', () => {
+      if (confirm('确定要清空所有自定义词库吗？此操作不可撤销。')) {
+        state.customWords = [];
+        state.customPhrases = [];
+        saveJSON(STORAGE_KEYS.CUSTOM_WORDS, []);
+        saveJSON(STORAGE_KEYS.CUSTOM_PHRASES, []);
+        renderCustomLibrary();
+        showToast('自定义词库已清空', 'info');
+      }
+    });
+
+    // ===== 搜索功能 =====
+    $('search-words').addEventListener('input', (e) => handleSearch(e.target.value, 'words'));
+    $('clear-search-words').addEventListener('click', () => {
+      $('search-words').value = '';
+      handleSearch('', 'words');
+    });
+    $('search-phrases').addEventListener('input', (e) => handleSearch(e.target.value, 'phrases'));
+    $('clear-search-phrases').addEventListener('click', () => {
+      $('search-phrases').value = '';
+      handleSearch('', 'phrases');
+    });
   }
 
   // ===== 视图切换 =====
@@ -184,8 +253,11 @@
     });
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
     $('view-' + view).classList.add('active');
-    
+
     if (view === 'stats') renderStats();
+    if (view === 'ai-add') renderCustomLibrary();
+    // 切换视图时停止发音
+    stopSpeaking();
   }
 
   // ===== 单词计划渲染 =====
@@ -804,6 +876,437 @@
     window.speechSynthesis.onvoiceschanged = () => {
       window.speechSynthesis.getVoices();
     };
+  }
+
+  // ===== AI加词功能 =====
+
+  // 初始化AI加词界面
+  function initAiView() {
+    const apiKey = localStorage.getItem(STORAGE_KEYS.GROQ_API_KEY);
+    if (apiKey) {
+      $('api-key-section').style.display = 'none';
+      $('ai-main-section').style.display = 'block';
+    } else {
+      $('api-key-section').style.display = 'block';
+      $('ai-main-section').style.display = 'none';
+    }
+
+    // 恢复AI模型选择
+    const savedModel = loadJSON(STORAGE_KEYS.AI_MODEL, 'llama-3.1-70b-versatile');
+    if ($('ai-model-select')) {
+      $('ai-model-select').value = savedModel;
+    }
+  }
+
+  // 保存API Key
+  function saveApiKey() {
+    const key = $('api-key-input').value.trim();
+    if (!key) {
+      showToast('请输入API Key', 'error');
+      return;
+    }
+    if (!key.startsWith('gsk_')) {
+      showToast('API Key格式不正确，应以 gsk_ 开头', 'error');
+      return;
+    }
+    localStorage.setItem(STORAGE_KEYS.GROQ_API_KEY, key);
+    $('api-key-section').style.display = 'none';
+    $('ai-main-section').style.display = 'block';
+    showToast('API Key已保存，可以开始使用AI加词了！', 'success');
+  }
+
+  // 调用Groq API生成词汇
+  async function generateAiWords() {
+    const keyword = $('ai-keyword-input').value.trim();
+    if (!keyword) {
+      showToast('请输入关键词', 'error');
+      return;
+    }
+    if (state.isAiGenerating) {
+      showToast('正在生成中，请稍候...', 'info');
+      return;
+    }
+
+    const apiKey = localStorage.getItem(STORAGE_KEYS.GROQ_API_KEY);
+    if (!apiKey) {
+      showToast('请先设置API Key', 'error');
+      initAiView();
+      return;
+    }
+
+    state.isAiGenerating = true;
+    $('ai-loading').style.display = 'flex';
+    $('ai-generate-btn').disabled = true;
+    $('ai-results-card').style.display = 'none';
+
+    const model = $('ai-model-select').value;
+
+    const prompt = `你是一个专业的英语词汇专家。请围绕关键词"${keyword}"生成相关的英语学习内容。
+
+要求：
+1. 生成5-8个相关单词，每个单词包含：word(单词), pos(词性), ipa(音标), meaning(中文释义), example(英文例句，要实用), category(分类：daily日常或professional专业)
+2. 生成2-3个相关短语，每个短语包含：phrase(短语), meaning(中文释义), context(英文例句/使用场景)
+3. 内容要围绕关键词的语义场，包括同义词、相关概念、常见搭配
+4. 如果关键词是中文，先翻译成英文再生成相关内容
+5. 返回严格的JSON格式，不要有任何其他文字、解释或markdown标记
+
+JSON格式：
+{"words":[{"word":"","pos":"","ipa":"","meaning":"","example":"","category":""}],"phrases":[{"phrase":"","meaning":"","context":""}]}`;
+
+    try {
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + apiKey,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.7,
+          max_tokens: 2000,
+          response_format: { type: 'json_object' }
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error?.message || 'API请求失败: ' + response.status);
+      }
+
+      const data = await response.json();
+      const content = data.choices[0].message.content;
+
+      // 解析JSON
+      let parsed;
+      try {
+        parsed = JSON.parse(content);
+      } catch (e) {
+        // 尝试提取JSON部分
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          parsed = JSON.parse(jsonMatch[0]);
+        } else {
+          throw new Error('AI返回格式无法解析');
+        }
+      }
+
+      state.aiGeneratedWords = parsed.words || [];
+      state.aiGeneratedPhrases = parsed.phrases || [];
+
+      if (state.aiGeneratedWords.length === 0 && state.aiGeneratedPhrases.length === 0) {
+        showToast('AI没有生成相关内容，请换个关键词试试', 'error');
+      } else {
+        renderAiResults();
+        showToast(`生成了 ${state.aiGeneratedWords.length} 个单词和 ${state.aiGeneratedPhrases.length} 个短语！`, 'success');
+      }
+
+    } catch (error) {
+      console.error('AI生成失败:', error);
+      let errorMsg = error.message;
+      if (errorMsg.includes('401') || errorMsg.includes('Unauthorized')) {
+        errorMsg = 'API Key无效，请检查后重试';
+      } else if (errorMsg.includes('429') || errorMsg.includes('rate limit')) {
+        errorMsg = 'API调用频率超限，请稍后再试';
+      }
+      showToast('生成失败: ' + errorMsg, 'error');
+    } finally {
+      state.isAiGenerating = false;
+      $('ai-loading').style.display = 'none';
+      $('ai-generate-btn').disabled = false;
+    }
+  }
+
+  // 渲染AI生成结果
+  function renderAiResults() {
+    const wordList = $('ai-word-list');
+    const phraseList = $('ai-phrase-list');
+
+    wordList.innerHTML = '';
+    phraseList.innerHTML = '';
+
+    state.aiGeneratedWords.forEach((word, index) => {
+      const item = document.createElement('div');
+      item.className = 'ai-word-item';
+      item.innerHTML = `
+        <input type="checkbox" class="ai-word-checkbox" data-index="${index}" checked>
+        <div class="ai-word-item-content">
+          <div class="word-header">
+            <div class="word-term">${escapeHtml(word.word)}</div>
+            <button class="btn-speak" data-speak-word="${index}" title="播放发音">🔊</button>
+            <div class="word-pos">${escapeHtml(word.pos || '')}</div>
+          </div>
+          <div class="word-ipa">${escapeHtml(word.ipa || '')}</div>
+          <div class="word-meaning">${escapeHtml(word.meaning)}</div>
+          <div class="word-example">${escapeHtml(word.example)}</div>
+        </div>
+      `;
+      // 发音按钮
+      item.querySelector('.btn-speak').addEventListener('click', (e) => {
+        e.stopPropagation();
+        speakText(word.word, e.target);
+      });
+      wordList.appendChild(item);
+    });
+
+    state.aiGeneratedPhrases.forEach((phrase, index) => {
+      const item = document.createElement('div');
+      item.className = 'ai-phrase-item';
+      item.innerHTML = `
+        <input type="checkbox" class="ai-phrase-checkbox" data-index="${index}" checked>
+        <div class="ai-phrase-item-content">
+          <div class="phrase-text">${escapeHtml(phrase.phrase)}
+            <button class="btn-speak-small" data-speak-phrase="${index}" title="播放发音">🔊</button>
+          </div>
+          <div class="phrase-meaning">${escapeHtml(phrase.meaning)}</div>
+          <div class="phrase-context">📝 ${escapeHtml(phrase.context)}</div>
+        </div>
+      `;
+      item.querySelector('.btn-speak-small').addEventListener('click', (e) => {
+        e.stopPropagation();
+        speakText(phrase.phrase, e.target);
+      });
+      phraseList.appendChild(item);
+    });
+
+    $('ai-results-card').style.display = 'block';
+  }
+
+  // 全选/取消全选
+  function toggleSelectAll(listId, checked) {
+    const list = $(listId);
+    const checkboxes = list.querySelectorAll('input[type="checkbox"]');
+    const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+    checkboxes.forEach(cb => { cb.checked = !allChecked; });
+  }
+
+  // 添加选中到自定义词库
+  function addSelectedToLibrary() {
+    const wordCheckboxes = document.querySelectorAll('.ai-word-checkbox:checked');
+    const phraseCheckboxes = document.querySelectorAll('.ai-phrase-checkbox:checked');
+
+    if (wordCheckboxes.length === 0 && phraseCheckboxes.length === 0) {
+      showToast('请先选择要添加的单词或短语', 'error');
+      return;
+    }
+
+    let addedWords = 0;
+    let addedPhrases = 0;
+
+    wordCheckboxes.forEach(cb => {
+      const index = parseInt(cb.dataset.index);
+      const word = state.aiGeneratedWords[index];
+      if (word && !state.customWords.find(w => w.word.toLowerCase() === word.word.toLowerCase())) {
+        state.customWords.push({ ...word, addedAt: new Date().toISOString() });
+        addedWords++;
+      }
+    });
+
+    phraseCheckboxes.forEach(cb => {
+      const index = parseInt(cb.dataset.index);
+      const phrase = state.aiGeneratedPhrases[index];
+      if (phrase && !state.customPhrases.find(p => p.phrase.toLowerCase() === phrase.phrase.toLowerCase())) {
+        state.customPhrases.push({ ...phrase, addedAt: new Date().toISOString() });
+        addedPhrases++;
+      }
+    });
+
+    saveJSON(STORAGE_KEYS.CUSTOM_WORDS, state.customWords);
+    saveJSON(STORAGE_KEYS.CUSTOM_PHRASES, state.customPhrases);
+    renderCustomLibrary();
+
+    const total = addedWords + addedPhrases;
+    if (total > 0) {
+      showToast(`已添加 ${addedWords} 个单词和 ${addedPhrases} 个短语到自定义词库！`, 'success');
+    } else {
+      showToast('所选内容已存在于词库中', 'info');
+    }
+  }
+
+  // 渲染自定义词库
+  function renderCustomLibrary() {
+    const wordList = $('custom-word-list');
+    const phraseList = $('custom-phrase-list');
+
+    $('custom-words-count').textContent = state.customWords.length + '词';
+    $('custom-phrases-count').textContent = state.customPhrases.length + '短语';
+
+    if (state.customWords.length === 0) {
+      wordList.innerHTML = '<div class="empty-custom"><span class="emoji">📖</span>还没有自定义单词<br>用上方AI生成功能添加吧！</div>';
+    } else {
+      wordList.innerHTML = '';
+      state.customWords.forEach((word, index) => {
+        const card = document.createElement('div');
+        card.className = 'custom-word-item word-card ' + (word.category || 'daily');
+        card.innerHTML = `
+          <button class="custom-delete-btn" data-index="${index}" title="删除">🗑️</button>
+          <div class="word-header">
+            <div class="word-term">${escapeHtml(word.word)}</div>
+            <button class="btn-speak" title="播放发音">🔊</button>
+            <div class="word-pos">${escapeHtml(word.pos || '')}</div>
+          </div>
+          <div class="word-ipa">${escapeHtml(word.ipa || '')}</div>
+          <div class="word-meaning">${escapeHtml(word.meaning)}</div>
+          <div class="word-example">${escapeHtml(word.example)}</div>
+          <div class="word-actions">
+            <button class="btn-record-small">🎙️ 录音</button>
+          </div>
+        `;
+        card.querySelector('.btn-speak').addEventListener('click', (e) => {
+          speakText(word.word, e.target);
+        });
+        card.querySelector('.btn-record-small').addEventListener('click', () => {
+          openRecordModal(word, 'custom-words', 0, index);
+        });
+        card.querySelector('.custom-delete-btn').addEventListener('click', () => {
+          if (confirm('确定删除单词 "' + word.word + '" 吗？')) {
+            state.customWords.splice(index, 1);
+            saveJSON(STORAGE_KEYS.CUSTOM_WORDS, state.customWords);
+            renderCustomLibrary();
+            showToast('已删除', 'info');
+          }
+        });
+        wordList.appendChild(card);
+      });
+    }
+
+    if (state.customPhrases.length === 0) {
+      phraseList.innerHTML = '<div class="empty-custom"><span class="emoji">💬</span>还没有自定义短语<br>用上方AI生成功能添加吧！</div>';
+    } else {
+      phraseList.innerHTML = '';
+      state.customPhrases.forEach((phrase, index) => {
+        const card = document.createElement('div');
+        card.className = 'custom-phrase-item phrase-card';
+        card.innerHTML = `
+          <button class="custom-delete-btn" data-index="${index}" title="删除">🗑️</button>
+          <div class="phrase-module">${escapeHtml(phrase.module || '自定义')}</div>
+          <div class="phrase-header">
+            <div class="phrase-text">${escapeHtml(phrase.phrase)}</div>
+            <button class="btn-speak" title="播放发音">🔊</button>
+          </div>
+          <div class="phrase-meaning">${escapeHtml(phrase.meaning)}</div>
+          <div class="phrase-context">📝 ${escapeHtml(phrase.context)}</div>
+          <div class="word-actions">
+            <button class="btn-record-small">🎙️ 录音</button>
+          </div>
+        `;
+        card.querySelector('.btn-speak').addEventListener('click', (e) => {
+          speakText(phrase.phrase, e.target);
+        });
+        card.querySelector('.btn-record-small').addEventListener('click', () => {
+          openRecordModal(phrase, 'custom-phrases', 0, index);
+        });
+        card.querySelector('.custom-delete-btn').addEventListener('click', () => {
+          if (confirm('确定删除短语 "' + phrase.phrase + '" 吗？')) {
+            state.customPhrases.splice(index, 1);
+            saveJSON(STORAGE_KEYS.CUSTOM_PHRASES, state.customPhrases);
+            renderCustomLibrary();
+            showToast('已删除', 'info');
+          }
+        });
+        phraseList.appendChild(card);
+      });
+    }
+  }
+
+  // ===== 搜索功能 =====
+
+  function handleSearch(query, type) {
+    const resultsDiv = type === 'words' ? $('search-words-results') : $('search-phrases-results');
+    const clearBtn = type === 'words' ? $('clear-search-words') : $('clear-search-phrases');
+    const listEl = type === 'words' ? $('word-list') : $('phrase-list');
+
+    if (!query.trim()) {
+      resultsDiv.style.display = 'none';
+      resultsDiv.innerHTML = '';
+      clearBtn.style.display = 'none';
+      listEl.style.display = 'block';
+      return;
+    }
+
+    clearBtn.style.display = 'block';
+    listEl.style.display = 'none';
+
+    const q = query.toLowerCase().trim();
+    let results = [];
+
+    if (type === 'words') {
+      // 搜索预设单词
+      WORDS_PLAN.forEach(dayData => {
+        dayData.items.forEach(word => {
+          if (word.word.toLowerCase().includes(q) ||
+              word.meaning.toLowerCase().includes(q) ||
+              (word.example && word.example.toLowerCase().includes(q))) {
+            results.push({ ...word, source: 'Day ' + dayData.day });
+          }
+        });
+      });
+      // 搜索自定义单词
+      state.customWords.forEach(word => {
+        if (word.word.toLowerCase().includes(q) ||
+            word.meaning.toLowerCase().includes(q) ||
+            (word.example && word.example.toLowerCase().includes(q))) {
+          results.push({ ...word, source: '自定义词库' });
+        }
+      });
+    } else {
+      // 搜索预设短语
+      PHRASES_PLAN.forEach(dayData => {
+        dayData.items.forEach(phrase => {
+          if (phrase.phrase.toLowerCase().includes(q) ||
+              phrase.meaning.toLowerCase().includes(q) ||
+              (phrase.context && phrase.context.toLowerCase().includes(q))) {
+            results.push({ ...phrase, source: 'Day ' + dayData.day });
+          }
+        });
+      });
+      // 搜索自定义短语
+      state.customPhrases.forEach(phrase => {
+        if (phrase.phrase.toLowerCase().includes(q) ||
+            phrase.meaning.toLowerCase().includes(q) ||
+            (phrase.context && phrase.context.toLowerCase().includes(q))) {
+          results.push({ ...phrase, source: '自定义词库' });
+        }
+      });
+    }
+
+    // 去重
+    const seen = new Set();
+    results = results.filter(r => {
+      const key = type === 'words' ? r.word.toLowerCase() : r.phrase.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    // 限制结果数量
+    results = results.slice(0, 50);
+
+    if (results.length === 0) {
+      resultsDiv.innerHTML = '<p style="text-align:center;color:var(--text-secondary);padding:20px;">未找到匹配的' + (type === 'words' ? '单词' : '短语') + '</p>';
+    } else {
+      resultsDiv.innerHTML = '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">找到 ' + results.length + ' 个结果（点击可发音）</p>';
+      results.forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'search-result-item';
+        if (type === 'words') {
+          div.innerHTML = `
+            <div class="search-result-word">${escapeHtml(item.word)} <span style="font-size:11px;color:var(--muted);font-weight:normal;">${escapeHtml(item.pos || '')} · ${escapeHtml(item.source)}</span></div>
+            <div class="search-result-meaning">${escapeHtml(item.meaning)} — ${escapeHtml(item.example || '')}</div>
+          `;
+          div.addEventListener('click', () => speakText(item.word));
+        } else {
+          div.innerHTML = `
+            <div class="search-result-word">${escapeHtml(item.phrase)} <span style="font-size:11px;color:var(--muted);font-weight:normal;">${escapeHtml(item.source)}</span></div>
+            <div class="search-result-meaning">${escapeHtml(item.meaning)} — ${escapeHtml(item.context || '')}</div>
+          `;
+          div.addEventListener('click', () => speakText(item.phrase));
+        }
+        resultsDiv.appendChild(div);
+      });
+    }
+
+    resultsDiv.style.display = 'block';
   }
 
   // ===== 启动 =====
